@@ -12,7 +12,7 @@ enum RecordPhase: Equatable {
 final class OverlayController {
     private var panel: NSPanel?
     private weak var ctrl: AppController?
-    private let size = NSSize(width: 110, height: 110)
+    private let size = NSSize(width: 180, height: 180)
 
     init(controller: AppController) {
         self.ctrl = controller
@@ -21,7 +21,12 @@ final class OverlayController {
     func show() {
         if panel == nil { build() }
         positionTopLeft()
+        panel?.alphaValue = 1.0
+        panel?.setIsVisible(true)
         panel?.orderFrontRegardless()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.panel?.orderFrontRegardless()
+        }
     }
 
     func hide() {
@@ -50,6 +55,7 @@ final class OverlayController {
         let view = OverlayView().environmentObject(ctrl)
         let host = NSHostingView(rootView: AnyView(view))
         host.frame = NSRect(origin: .zero, size: size)
+        host.autoresizingMask = [.width, .height]
         p.contentView = host
         self.panel = p
     }
@@ -83,37 +89,38 @@ struct OverlayView: View {
             Rectangle().fill(borderColor.opacity(0.4)).frame(height: 1)
             footer
         }
-        .background(Theme.bg.opacity(0.94))
-        .overlay(Rectangle().stroke(borderColor, lineWidth: 1))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg)
+        .overlay(Rectangle().stroke(borderColor, lineWidth: 2))
         .onReceive(tick) { _ in nowTick = Date() }
     }
 
     private var header: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Text(stateGlyph)
                 .foregroundColor(stateColor)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
             Text(stateLabel)
                 .foregroundColor(stateColor)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
             Spacer()
             Text("SPOOL")
                 .foregroundColor(Theme.muted)
-                .font(.system(size: 9, design: .monospaced))
+                .font(.system(size: 11, design: .monospaced))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
     }
 
     private var footer: some View {
         HStack {
             Text(footerText)
                 .foregroundColor(Theme.muted)
-                .font(.system(size: 9, design: .monospaced))
+                .font(.system(size: 11, design: .monospaced))
             Spacer()
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
     }
 
     private var bigDisplay: some View {
@@ -121,21 +128,21 @@ struct OverlayView: View {
             switch ctrl.recordPhase {
             case .countdown(let n):
                 Text("\(n)")
-                    .font(.system(size: 44, weight: .medium, design: .monospaced))
+                    .font(.system(size: 86, weight: .semibold, design: .monospaced))
                     .foregroundColor(Theme.amber)
                     .transition(.scale.combined(with: .opacity))
                     .id(n)
             case .recording:
                 Text(formatStopwatch(ctrl.recorder.elapsed))
-                    .font(.system(size: 18, weight: .medium, design: .monospaced))
+                    .font(.system(size: 26, weight: .medium, design: .monospaced))
                     .foregroundColor(Theme.accent)
             case .paused:
                 Text(formatStopwatch(ctrl.recorder.elapsed))
-                    .font(.system(size: 18, weight: .medium, design: .monospaced))
+                    .font(.system(size: 26, weight: .medium, design: .monospaced))
                     .foregroundColor(Theme.amber)
             case .idle:
                 Text("—")
-                    .font(.system(size: 18, weight: .medium, design: .monospaced))
+                    .font(.system(size: 26, weight: .medium, design: .monospaced))
                     .foregroundColor(Theme.muted)
             }
         }

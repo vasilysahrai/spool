@@ -15,10 +15,15 @@ final class AppController: ObservableObject {
     @Published var status: String = "READY"
     @Published var selectedMacroID: UUID?
     @Published var accessibilityGranted: Bool = AXIsProcessTrusted()
+    @Published var recordPhase: RecordPhase = .idle
 
     private var registeredIDs: [UInt32] = []
     private var permTimer: Timer?
     private var cancellables: Set<AnyCancellable> = []
+    private var overlay: OverlayController!
+    private var countdownTask: Task<Void, Never>?
+    private var previousApp: NSRunningApplication?
+    private var workspaceObserver: NSObjectProtocol?
 
     private let hotkeyURL: URL = {
         let fm = FileManager.default
@@ -32,6 +37,8 @@ final class AppController: ObservableObject {
         loadHotkeys()
         registerAllHotkeys()
         startPermissionPoll()
+        observeWorkspace()
+        overlay = OverlayController(controller: self)
 
         recorder.objectWillChange
             .receive(on: DispatchQueue.main)
@@ -45,6 +52,24 @@ final class AppController: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+    }
+
+    private func observeWorkspace() {
+        let myPID = NSRunningApplication.current.processIdentifier
+        if let cur = NSWorkspace.shared.frontmostApplication, cur.processIdentifier != myPID {
+            previousApp = cur
+        }
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            if app.processIdentifier == NSRunningApplication.current.processIdentifier { return }
+            Task { @MainActor [weak self] in
+                self?.previousApp = app
+            }
+        }
     }
 
     private func startPermissionPoll() {
@@ -96,16 +121,37 @@ final class AppController: ObservableObject {
     }
 
     func startRecording() {
-        guard recorder.state == .idle else { return }
+        guard recorder.state == .idle, recordPhase == .idle else { return }
         guard accessibilityGranted else {
             status = "GRANT ACCESSIBILITY FIRST"
             requestAccessibility()
             return
         }
-        if recorder.start() {
-            status = "● RECORDING"
-        } else {
-            status = "TAP FAILED · CHECK PERMISSIONS"
+
+        countdownTask?.cancel()
+        recordPhase = .countdown(3)
+        status = "COUNTDOWN…"
+        overlay.show()
+        hideMainWindow()
+        activatePreviousApp()
+
+        countdownTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            for n in stride(from: 3, through: 1, by: -1) {
+                if Task.isCancelled { return }
+                self.recordPhase = .countdown(n)
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            if Task.isCancelled { return }
+            if self.recorder.start() {
+                self.recordPhase = .recording
+                self.status = "● RECORDING"
+            } else {
+                self.recordPhase = .idle
+                self.overlay.hide()
+                self.restoreMainWindow()
+                self.status = "TAP FAILED · CHECK PERMISSIONS"
+            }
         }
     }
 
@@ -113,9 +159,11 @@ final class AppController: ObservableObject {
         switch recorder.state {
         case .recording:
             recorder.pause()
+            recordPhase = .paused
             status = "‖ PAUSED"
         case .paused:
             recorder.resume()
+            recordPhase = .recording
             status = "● RECORDING"
         case .idle:
             break
@@ -123,8 +171,21 @@ final class AppController: ObservableObject {
     }
 
     func stopAction() {
+        if case .countdown = recordPhase {
+            countdownTask?.cancel()
+            countdownTask = nil
+            recordPhase = .idle
+            overlay.hide()
+            restoreMainWindow()
+            status = "CANCELLED"
+            return
+        }
+
         if recorder.state != .idle {
             let result = recorder.stop()
+            recordPhase = .idle
+            overlay.hide()
+            restoreMainWindow()
             pendingDuration = result.duration
             if result.events.isEmpty {
                 pendingEvents = nil
@@ -137,6 +198,28 @@ final class AppController: ObservableObject {
             player.stop()
             status = "PLAYBACK STOPPED"
         }
+    }
+
+    private func mainWindow() -> NSWindow? {
+        NSApp.windows.first { !($0 is NSPanel) && $0.canBecomeMain }
+    }
+
+    private func hideMainWindow() {
+        mainWindow()?.orderOut(nil)
+    }
+
+    private func restoreMainWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let w = mainWindow() {
+            w.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    private func activatePreviousApp() {
+        guard let prev = previousApp,
+              prev.processIdentifier != NSRunningApplication.current.processIdentifier,
+              !prev.isTerminated else { return }
+        prev.activate(options: [])
     }
 
     func playAction() {

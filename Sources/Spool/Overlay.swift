@@ -1,0 +1,212 @@
+import AppKit
+import SwiftUI
+
+enum RecordPhase: Equatable {
+    case idle
+    case countdown(Int)
+    case recording
+    case paused
+}
+
+@MainActor
+final class OverlayController {
+    private var panel: NSPanel?
+    private weak var ctrl: AppController?
+    private let size = NSSize(width: 110, height: 110)
+
+    init(controller: AppController) {
+        self.ctrl = controller
+    }
+
+    func show() {
+        if panel == nil { build() }
+        positionTopLeft()
+        panel?.orderFrontRegardless()
+    }
+
+    func hide() {
+        panel?.orderOut(nil)
+    }
+
+    private func build() {
+        guard let ctrl = ctrl else { return }
+        let p = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        p.isFloatingPanel = true
+        p.level = .screenSaver
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.ignoresMouseEvents = true
+        p.becomesKeyOnlyIfNeeded = true
+        p.hidesOnDeactivate = false
+        p.isReleasedWhenClosed = false
+
+        let view = OverlayView().environmentObject(ctrl)
+        let host = NSHostingView(rootView: AnyView(view))
+        host.frame = NSRect(origin: .zero, size: size)
+        p.contentView = host
+        self.panel = p
+    }
+
+    private func positionTopLeft() {
+        guard let panel = panel, let screen = NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        let margin: CGFloat = 14
+        let originX = visible.origin.x + margin
+        let originY = visible.maxY - size.height - margin
+        panel.setFrame(NSRect(origin: NSPoint(x: originX, y: originY), size: size), display: true)
+    }
+}
+
+struct OverlayView: View {
+    @EnvironmentObject var ctrl: AppController
+    @State private var nowTick: Date = Date()
+    private let tick = Timer.publish(every: 1.0/30.0, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Rectangle().fill(borderColor.opacity(0.4)).frame(height: 1)
+            ZStack {
+                bigDisplay
+                if case .recording = ctrl.recordPhase {
+                    blinkingDot
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Rectangle().fill(borderColor.opacity(0.4)).frame(height: 1)
+            footer
+        }
+        .background(Theme.bg.opacity(0.94))
+        .overlay(Rectangle().stroke(borderColor, lineWidth: 1))
+        .onReceive(tick) { _ in nowTick = Date() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 4) {
+            Text(stateGlyph)
+                .foregroundColor(stateColor)
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+            Text(stateLabel)
+                .foregroundColor(stateColor)
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+            Spacer()
+            Text("SPOOL")
+                .foregroundColor(Theme.muted)
+                .font(.system(size: 9, design: .monospaced))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+
+    private var footer: some View {
+        HStack {
+            Text(footerText)
+                .foregroundColor(Theme.muted)
+                .font(.system(size: 9, design: .monospaced))
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+
+    private var bigDisplay: some View {
+        Group {
+            switch ctrl.recordPhase {
+            case .countdown(let n):
+                Text("\(n)")
+                    .font(.system(size: 44, weight: .medium, design: .monospaced))
+                    .foregroundColor(Theme.amber)
+                    .transition(.scale.combined(with: .opacity))
+                    .id(n)
+            case .recording:
+                Text(formatStopwatch(ctrl.recorder.elapsed))
+                    .font(.system(size: 18, weight: .medium, design: .monospaced))
+                    .foregroundColor(Theme.accent)
+            case .paused:
+                Text(formatStopwatch(ctrl.recorder.elapsed))
+                    .font(.system(size: 18, weight: .medium, design: .monospaced))
+                    .foregroundColor(Theme.amber)
+            case .idle:
+                Text("—")
+                    .font(.system(size: 18, weight: .medium, design: .monospaced))
+                    .foregroundColor(Theme.muted)
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: ctrl.recordPhase)
+    }
+
+    private var blinkingDot: some View {
+        let on = Int(nowTick.timeIntervalSinceReferenceDate * 2) % 2 == 0
+        return VStack {
+            HStack {
+                Spacer()
+                Text("●")
+                    .font(.system(size: 8))
+                    .foregroundColor(on ? Theme.accent : Color.clear)
+                    .padding(.trailing, 6)
+                    .padding(.top, 4)
+            }
+            Spacer()
+        }
+    }
+
+    private var stateGlyph: String {
+        switch ctrl.recordPhase {
+        case .countdown: return "⏲"
+        case .recording: return "●"
+        case .paused:    return "‖"
+        case .idle:      return "◌"
+        }
+    }
+
+    private var stateLabel: String {
+        switch ctrl.recordPhase {
+        case .countdown: return "READY"
+        case .recording: return "REC"
+        case .paused:    return "PAUSED"
+        case .idle:      return "IDLE"
+        }
+    }
+
+    private var stateColor: Color {
+        switch ctrl.recordPhase {
+        case .countdown: return Theme.amber
+        case .recording: return Theme.accent
+        case .paused:    return Theme.amber
+        case .idle:      return Theme.muted
+        }
+    }
+
+    private var borderColor: Color {
+        switch ctrl.recordPhase {
+        case .countdown: return Theme.amber
+        case .recording: return Theme.accent
+        case .paused:    return Theme.amber
+        case .idle:      return Theme.border
+        }
+    }
+
+    private var footerText: String {
+        switch ctrl.recordPhase {
+        case .countdown: return "starting in…"
+        case .recording: return "ev: \(ctrl.recorder.events.count)"
+        case .paused:    return "press resume"
+        case .idle:      return "—"
+        }
+    }
+
+    private func formatStopwatch(_ t: TimeInterval) -> String {
+        let total = max(0, t)
+        let m = Int(total) / 60
+        let s = Int(total) % 60
+        let cs = Int((total - Double(Int(total))) * 100)
+        return String(format: "%02d:%02d.%02d", m, s, cs)
+    }
+}

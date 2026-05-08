@@ -10,63 +10,63 @@ enum RecordPhase: Equatable {
 
 @MainActor
 final class OverlayController {
-    private var panel: NSPanel?
+    private var window: NSWindow?
     private weak var ctrl: AppController?
-    private let size = NSSize(width: 180, height: 180)
+    private let size = NSSize(width: 200, height: 200)
 
     init(controller: AppController) {
         self.ctrl = controller
     }
 
     func show() {
-        if panel == nil { build() }
+        if window == nil { build() }
         positionTopLeft()
-        panel?.alphaValue = 1.0
-        panel?.setIsVisible(true)
-        panel?.orderFrontRegardless()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.panel?.orderFrontRegardless()
+        window?.alphaValue = 1.0
+        window?.setIsVisible(true)
+        window?.orderFrontRegardless()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) { [weak self] in
+            self?.window?.orderFrontRegardless()
         }
     }
 
     func hide() {
-        panel?.orderOut(nil)
+        window?.orderOut(nil)
     }
 
     private func build() {
         guard let ctrl = ctrl else { return }
-        let p = NSPanel(
+        let w = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        p.isFloatingPanel = true
-        p.level = .screenSaver
-        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        p.isOpaque = false
-        p.backgroundColor = .clear
-        p.hasShadow = true
-        p.ignoresMouseEvents = true
-        p.becomesKeyOnlyIfNeeded = true
-        p.hidesOnDeactivate = false
-        p.isReleasedWhenClosed = false
+        w.level = .floating
+        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.hasShadow = true
+        w.ignoresMouseEvents = true
+        w.hidesOnDeactivate = false
+        w.isReleasedWhenClosed = false
+        w.isMovable = false
+        w.acceptsMouseMovedEvents = false
 
         let view = OverlayView().environmentObject(ctrl)
         let host = NSHostingView(rootView: AnyView(view))
         host.frame = NSRect(origin: .zero, size: size)
         host.autoresizingMask = [.width, .height]
-        p.contentView = host
-        self.panel = p
+        w.contentView = host
+        self.window = w
     }
 
     private func positionTopLeft() {
-        guard let panel = panel, let screen = NSScreen.main else { return }
+        guard let w = window, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let visible = screen.visibleFrame
-        let margin: CGFloat = 14
+        let margin: CGFloat = 16
         let originX = visible.origin.x + margin
         let originY = visible.maxY - size.height - margin
-        panel.setFrame(NSRect(origin: NSPoint(x: originX, y: originY), size: size), display: true)
+        w.setFrame(NSRect(origin: NSPoint(x: originX, y: originY), size: size), display: true)
     }
 }
 
@@ -78,7 +78,7 @@ struct OverlayView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Rectangle().fill(borderColor.opacity(0.4)).frame(height: 1)
+            Rectangle().fill(borderColor.opacity(0.5)).frame(height: 1)
             ZStack {
                 bigDisplay
                 if case .recording = ctrl.recordPhase {
@@ -86,7 +86,7 @@ struct OverlayView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Rectangle().fill(borderColor.opacity(0.4)).frame(height: 1)
+            Rectangle().fill(borderColor.opacity(0.5)).frame(height: 1)
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -96,20 +96,20 @@ struct OverlayView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Text(stateGlyph)
                 .foregroundColor(stateColor)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
             Text(stateLabel)
                 .foregroundColor(stateColor)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
             Spacer()
             Text("SPOOL")
                 .foregroundColor(Theme.muted)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var footer: some View {
@@ -117,10 +117,11 @@ struct OverlayView: View {
             Text(footerText)
                 .foregroundColor(Theme.muted)
                 .font(.system(size: 11, design: .monospaced))
+                .lineLimit(1)
             Spacer()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var bigDisplay: some View {
@@ -128,21 +129,21 @@ struct OverlayView: View {
             switch ctrl.recordPhase {
             case .countdown(let n):
                 Text("\(n)")
-                    .font(.system(size: 86, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 100, weight: .semibold, design: .monospaced))
                     .foregroundColor(Theme.amber)
                     .transition(.scale.combined(with: .opacity))
                     .id(n)
             case .recording:
                 Text(formatStopwatch(ctrl.recorder.elapsed))
-                    .font(.system(size: 26, weight: .medium, design: .monospaced))
+                    .font(.system(size: 28, weight: .medium, design: .monospaced))
                     .foregroundColor(Theme.accent)
             case .paused:
                 Text(formatStopwatch(ctrl.recorder.elapsed))
-                    .font(.system(size: 26, weight: .medium, design: .monospaced))
+                    .font(.system(size: 28, weight: .medium, design: .monospaced))
                     .foregroundColor(Theme.amber)
             case .idle:
                 Text("—")
-                    .font(.system(size: 26, weight: .medium, design: .monospaced))
+                    .font(.system(size: 28, weight: .medium, design: .monospaced))
                     .foregroundColor(Theme.muted)
             }
         }
@@ -155,10 +156,10 @@ struct OverlayView: View {
             HStack {
                 Spacer()
                 Text("●")
-                    .font(.system(size: 8))
+                    .font(.system(size: 10))
                     .foregroundColor(on ? Theme.accent : Color.clear)
-                    .padding(.trailing, 6)
-                    .padding(.top, 4)
+                    .padding(.trailing, 8)
+                    .padding(.top, 6)
             }
             Spacer()
         }
@@ -202,8 +203,8 @@ struct OverlayView: View {
 
     private var footerText: String {
         switch ctrl.recordPhase {
-        case .countdown: return "starting in…"
-        case .recording: return "ev: \(ctrl.recorder.events.count)"
+        case .countdown: return "alt-tab to your app"
+        case .recording: return "ev: \(ctrl.recorder.events.count) · F8 to stop"
         case .paused:    return "press resume"
         case .idle:      return "—"
         }

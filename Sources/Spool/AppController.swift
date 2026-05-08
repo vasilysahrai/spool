@@ -133,7 +133,6 @@ final class AppController: ObservableObject {
         status = "COUNTDOWN…"
         overlay.show()
         hideMainWindow()
-        activatePreviousApp()
 
         countdownTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
@@ -150,7 +149,9 @@ final class AppController: ObservableObject {
                 self.recordPhase = .idle
                 self.overlay.hide()
                 self.restoreMainWindow()
-                self.status = "TAP FAILED · CHECK PERMISSIONS"
+                self.pendingDuration = 0
+                self.pendingEvents = []
+                self.status = "⚠ TAP FAILED — RE-GRANT ACCESSIBILITY"
             }
         }
     }
@@ -177,7 +178,7 @@ final class AppController: ObservableObject {
             recordPhase = .idle
             overlay.hide()
             restoreMainWindow()
-            status = "CANCELLED"
+            status = "CANCELLED · NO RECORDING STARTED"
             return
         }
 
@@ -187,12 +188,11 @@ final class AppController: ObservableObject {
             overlay.hide()
             restoreMainWindow()
             pendingDuration = result.duration
+            pendingEvents = result.events
             if result.events.isEmpty {
-                pendingEvents = nil
-                status = "EMPTY · DISCARDED"
+                status = "⚠ 0 EVENTS — RE-GRANT ACCESSIBILITY"
             } else {
-                pendingEvents = result.events
-                status = "SAVE MACRO?"
+                status = "SAVE MACRO? · \(result.events.count) events"
             }
         } else if player.state == .playing {
             player.stop()
@@ -209,8 +209,12 @@ final class AppController: ObservableObject {
     }
 
     private func restoreMainWindow() {
+        NSApp.unhide(nil)
         NSApp.activate(ignoringOtherApps: true)
         if let w = mainWindow() {
+            w.deminiaturize(nil)
+            w.setIsVisible(true)
+            w.orderFrontRegardless()
             w.makeKeyAndOrderFront(nil)
         }
     }

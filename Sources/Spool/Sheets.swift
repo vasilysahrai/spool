@@ -18,8 +18,30 @@ struct SavePromptView: View {
                     .font(Theme.monoMd.weight(.bold))
                     .foregroundColor(Theme.fg)
                 Text("captured \(count) events · \(formatDuration(duration))")
-                    .foregroundColor(Theme.muted)
+                    .foregroundColor(count == 0 ? Theme.amber : Theme.muted)
                     .font(Theme.monoSm)
+                if count == 0 {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("⚠ no events were recorded.")
+                            .foregroundColor(Theme.amber)
+                            .font(Theme.monoSm)
+                        Text("if you rebuilt Spool, macOS invalidated its")
+                            .foregroundColor(Theme.muted).font(Theme.monoSm)
+                        Text("Accessibility permission. open System Settings:")
+                            .foregroundColor(Theme.muted).font(Theme.monoSm)
+                        Button("OPEN ACCESSIBILITY SETTINGS") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(HackerButtonStyle())
+                        .padding(.top, 4)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.black.opacity(0.4))
+                    .overlay(Rectangle().stroke(Theme.amber.opacity(0.5), lineWidth: 1))
+                }
 
                 HStack(spacing: 6) {
                     Text("$").foregroundColor(Theme.dim)

@@ -16,6 +16,7 @@ final class AppController: ObservableObject {
     @Published var selectedMacroID: UUID?
     @Published var accessibilityGranted: Bool = AXIsProcessTrusted()
     @Published var recordPhase: RecordPhase = .idle
+    var mainWindowRef: NSWindow?
 
     private var registeredIDs: [UInt32] = []
     private var permTimer: Timer?
@@ -201,7 +202,8 @@ final class AppController: ObservableObject {
     }
 
     private func mainWindow() -> NSWindow? {
-        NSApp.windows.first { !($0 is NSPanel) && $0.canBecomeMain }
+        if let w = mainWindowRef { return w }
+        return NSApp.windows.first { !($0 is NSPanel) && $0.canBecomeMain }
     }
 
     private func hideMainWindow() {

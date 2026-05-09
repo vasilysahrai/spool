@@ -42,6 +42,17 @@ final class SpoolAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            for w in NSApp.windows where w.canBecomeMain {
+                w.setIsVisible(true)
+                w.makeKeyAndOrderFront(nil)
+                break
+            }
+        }
+        return true
     }
 }

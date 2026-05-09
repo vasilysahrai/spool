@@ -25,6 +25,9 @@ struct ContentView: View {
                 }
             }
         }
+        .background(WindowAccessor { window in
+            ctrl.mainWindowRef = window
+        })
         .foregroundColor(Theme.fg)
         .font(Theme.mono)
         .onReceive(tick) { _ in nowTick = Date() }
@@ -366,6 +369,28 @@ struct ContentView: View {
         let f = DateFormatter()
         f.dateFormat = "MMM d HH:mm"
         return f.string(from: d)
+    }
+}
+
+// MARK: - Window capture
+
+struct WindowAccessor: NSViewRepresentable {
+    let onResolved: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async {
+            onResolved(v.window)
+        }
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if nsView.window != nil {
+            DispatchQueue.main.async {
+                onResolved(nsView.window)
+            }
+        }
     }
 }
 
